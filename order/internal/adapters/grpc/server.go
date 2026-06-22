@@ -11,7 +11,9 @@ import (
 	"github.com/pimentaluan/microservices/order/internal/application/core/domain"
 	"github.com/pimentaluan/microservices/order/internal/ports"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 )
 
 type Adapter struct {
@@ -43,7 +45,11 @@ func (a Adapter) Create(ctx context.Context, request *orderpb.CreateOrderRequest
 	result, err := a.api.PlaceOrder(newOrder)
 
 	if err != nil {
-		return nil, err
+		if status.Code(err) == codes.InvalidArgument {
+			return nil, err
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to place order: %v", err)
 	}
 
 	return &orderpb.CreateOrderResponse{

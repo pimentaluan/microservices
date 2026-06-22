@@ -96,3 +96,7 @@ func (a Adapter) Save(order *domain.Order) error {
 
 	return result.Error
 }
+
+func (a Adapter) UpdateStatus(id int64, status string) error {
+	return a.db.Model(&Order{}).Where("id = ?", id).Update("status", status).Error
+}

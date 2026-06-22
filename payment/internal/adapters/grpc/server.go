@@ -11,7 +11,9 @@ import (
 	"github.com/pimentaluan/microservices/payment/internal/application/core/domain"
 	"github.com/pimentaluan/microservices/payment/internal/ports"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 )
 
 type Adapter struct {
@@ -27,9 +29,13 @@ func NewAdapter(api ports.APIPort, port int) *Adapter {
 func (a Adapter) Create(ctx context.Context, request *paymentpb.CreatePaymentRequest) (*paymentpb.CreatePaymentResponse, error) {
 	newPayment := domain.NewPayment(request.UserId, request.OrderId, request.TotalPrice)
 
-	result, err := a.api.CreatePayment(newPayment)
+	result, err := a.api.Charge(ctx, newPayment)
 	if err != nil {
-		return nil, err
+		if status.Code(err) == codes.InvalidArgument {
+			return nil, err
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to charge: %v", err)
 	}
 
 	return &paymentpb.CreatePaymentResponse{
