@@ -6,4 +6,5 @@ type DBPort interface {
 	Get(id string) (domain.Order, error)
 	Save(*domain.Order) error
 	UpdateStatus(id int64, status string) error
+	ProductExists(productCode string) (bool, error)
 }

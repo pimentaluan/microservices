@@ -1,17 +1,10 @@
-module github.com/pimentaluan/microservices/order
+module github.com/pimentaluan/microservices/shipping
 
 go 1.26.3
-
-replace github.com/pimentaluan/microservices-proto/golang/order => ../../microservices-proto/order
-
-replace github.com/pimentaluan/microservices-proto/golang/payment => ../../microservices-proto/payment
 
 replace github.com/pimentaluan/microservices-proto/golang/shipping => ../../microservices-proto/shipping
 
 require (
-	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
-	github.com/pimentaluan/microservices-proto/golang/order v0.0.0-00010101000000-000000000000
-	github.com/pimentaluan/microservices-proto/golang/payment v0.0.0-00010101000000-000000000000
 	github.com/pimentaluan/microservices-proto/golang/shipping v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.81.1
 	gorm.io/driver/mysql v1.6.0

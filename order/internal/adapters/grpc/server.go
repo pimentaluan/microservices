@@ -45,7 +45,7 @@ func (a Adapter) Create(ctx context.Context, request *orderpb.CreateOrderRequest
 	result, err := a.api.PlaceOrder(newOrder)
 
 	if err != nil {
-		if status.Code(err) == codes.InvalidArgument {
+		if code := status.Code(err); code != codes.Unknown {
 			return nil, err
 		}
 

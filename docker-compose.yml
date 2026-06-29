@@ -1,0 +1,67 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: microsservices-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: minhasenha
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-pminhasenha"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  payment:
+    build:
+      context: ..
+      dockerfile: microservices/payment/Dockerfile
+    environment:
+      DATA_SOURCE_URL: root:minhasenha@tcp(mysql:3306)/payment?parseTime=true
+      APPLICATION_PORT: 3001
+      ENV: development
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+
+  shipping:
+    build:
+      context: ..
+      dockerfile: microservices/shipping/Dockerfile
+    environment:
+      DATA_SOURCE_URL: root:minhasenha@tcp(mysql:3306)/shipping?parseTime=true
+      APPLICATION_PORT: 3002
+      ENV: development
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "3002:3002"
+
+  order:
+    build:
+      context: ..
+      dockerfile: microservices/order/Dockerfile
+    environment:
+      DATA_SOURCE_URL: root:minhasenha@tcp(mysql:3306)/order?parseTime=true
+      PAYMENT_SERVICE_URL: payment:3001
+      SHIPPING_SERVICE_URL: shipping:3002
+      APPLICATION_PORT: 3000
+      ENV: development
+    depends_on:
+      mysql:
+        condition: service_healthy
+      payment:
+        condition: service_started
+      shipping:
+        condition: service_started
+    ports:
+      - "3000:3000"
+
+volumes:
+  mysql-data:

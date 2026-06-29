@@ -1,9 +1,10 @@
 # Microsservicos com Go, gRPC e Arquitetura Hexagonal
 
-Projeto da disciplina de Programacao Distribuida com dois microsservicos:
+Projeto da disciplina de Programacao Distribuida com tres microsservicos:
 
 - `order`: recebe pedidos de compra
 - `payment`: registra a cobranca do pedido
+- `shipping`: calcula e registra o prazo de entrega
 
 O projeto usa:
 
@@ -20,11 +21,14 @@ O projeto usa:
 atividade2/
 ├── microservices/
 │   ├── init.sql
+│   ├── docker-compose.yml
 │   ├── order/
-│   └── payment/
+│   ├── payment/
+│   └── shipping/
 └── microservices-proto/
     ├── order/
     ├── payment/
+    ├── shipping/
     └── run.sh
 ```
 
@@ -63,9 +67,17 @@ atividade2/
 - retry configurado para `Unavailable` e `ResourceExhausted`
 - maximo de `5` tentativas com `BackoffLinear(time.Second)`
 
-## Como gerar os stubs protobuf
+### Parte 5 - Shipping, estoque e deploy com Docker
 
-Os arquivos gerados ja estao no repositorio, mas o script tambem foi mantido.
+- criacao do microsservico `shipping` com protobuf e arquitetura hexagonal
+- integracao do `order` com `shipping` apenas apos pagamento bem-sucedido
+- calculo do prazo de entrega com base na quantidade total de itens
+- validacao de estoque no `order` antes de salvar o pedido
+- retorno de erro `NotFound` para produtos inexistentes
+- Dockerfiles para `order`, `payment` e `shipping`
+- `docker-compose.yml` para subir todo o ambiente
+
+## Como gerar os stubs protobuf
 
 Dentro de `microservices-proto`:
 
@@ -74,11 +86,9 @@ cd microservices-proto
 sh run.sh
 ```
 
-## Como subir o ambiente
+## Execucao
 
-### 1. Subir o MySQL
-
-Abra o Docker Desktop e depois execute:
+### 1. MySQL
 
 ```bash
 cd microservices
@@ -96,9 +106,7 @@ Se o container ja existir:
 docker start microsservices-mysql
 ```
 
-### 2. Subir o microsservico Payment
-
-Em outro terminal:
+### 2. Payment
 
 ```bash
 cd microservices/payment
@@ -109,33 +117,43 @@ ENV=development \
 go run cmd/main.go
 ```
 
-### 3. Subir o microsservico Order
+### 3. Shipping
 
-Em outro terminal:
+```bash
+cd microservices/shipping
+
+DATA_SOURCE_URL="root:minhasenha@tcp(127.0.0.1:3306)/shipping?parseTime=true" \
+APPLICATION_PORT=3002 \
+ENV=development \
+go run cmd/main.go
+```
+
+### 4. Order
 
 ```bash
 cd microservices/order
 
 DATA_SOURCE_URL="root:minhasenha@tcp(127.0.0.1:3306)/order?parseTime=true" \
 PAYMENT_SERVICE_URL="127.0.0.1:3001" \
+SHIPPING_SERVICE_URL="127.0.0.1:3002" \
 APPLICATION_PORT=3000 \
 ENV=development \
 go run cmd/main.go
 ```
 
-### 4. Confirmar que o Order esta exposto
+### 5. Verificacao do servico
 
 ```bash
 grpcurl -plaintext 127.0.0.1:3000 list
 ```
 
-O esperado e aparecer `order.Order`.
+Saida esperada: `order.Order`.
 
-## Como testar cada parte
+## Testes
 
 ### Parte 1 - Teste basico do Order
 
-Cria um pedido valido no microsservico `order`:
+Comando:
 
 ```bash
 grpcurl -plaintext \
@@ -143,7 +161,7 @@ grpcurl -plaintext \
   127.0.0.1:3000 order.Order/Create
 ```
 
-Resultado esperado:
+Retorno esperado:
 
 ```json
 {
@@ -153,7 +171,7 @@ Resultado esperado:
 
 ### Parte 2 - Teste da comunicacao Order -> Payment
 
-Com os dois servicos rodando, execute a mesma requisicao valida:
+Com os tres servicos em execucao, rode a mesma requisicao da Parte 1:
 
 ```bash
 grpcurl -plaintext \
@@ -161,7 +179,7 @@ grpcurl -plaintext \
   127.0.0.1:3000 order.Order/Create
 ```
 
-Se o `orderId` for retornado, o `order` conseguiu salvar o pedido e chamar o `payment` com sucesso.
+Se houver retorno de `orderId`, a chamada ao `payment` foi concluida sem erro.
 
 ### Parte 3 - Testes de tratamento de erros
 
@@ -173,7 +191,7 @@ grpcurl -plaintext \
   127.0.0.1:3000 order.Order/Create
 ```
 
-Resultado esperado:
+Retorno esperado:
 
 ```txt
 ERROR:
@@ -189,7 +207,7 @@ grpcurl -plaintext \
   127.0.0.1:3000 order.Order/Create
 ```
 
-Resultado esperado:
+Retorno esperado:
 
 ```txt
 ERROR:
@@ -205,7 +223,7 @@ grpcurl -plaintext \
   127.0.0.1:3000 order.Order/Create
 ```
 
-Resultado esperado:
+Retorno esperado:
 
 ```json
 {
@@ -219,21 +237,21 @@ Resultado esperado:
 docker exec -it microsservices-mysql mysql -uroot -pminhasenha
 ```
 
-Dentro do MySQL:
+Consulta:
 
 ```sql
 USE `order`;
 SELECT id, customer_id, status FROM orders;
 ```
 
-Esperado:
+Verificacao:
 
 - pedidos com erro ficam como `Canceled`
 - pedidos com sucesso ficam como `Paid`
 
 ### Parte 4 - Testes de timeout e retry
 
-#### 1. Teste de retry
+#### 1. Retry
 
 Com o `order` rodando, pare o `payment` com `Ctrl+C` e execute:
 
@@ -243,12 +261,12 @@ grpcurl -plaintext \
   127.0.0.1:3000 order.Order/Create
 ```
 
-Comportamento esperado:
+Verificacao:
 
 - a chamada falha no final
 - antes de falhar, o cliente do `order` tenta novamente automaticamente
 
-#### 2. Teste de timeout
+#### 2. Timeout
 
 Para simular lentidao no `payment`, adicione temporariamente este trecho no inicio da funcao `Create` de [payment/internal/adapters/grpc/server.go](/Users/luanpimenta/Documents/projetos/ifpb/pd/atividade2/microservices/payment/internal/adapters/grpc/server.go:29):
 
@@ -256,7 +274,7 @@ Para simular lentidao no `payment`, adicione temporariamente este trecho no inic
 time.Sleep(3 * time.Second)
 ```
 
-Tambem importe `time`, reinicie o `payment` e execute:
+Importe `time`, reinicie o `payment` e execute:
 
 ```bash
 grpcurl -plaintext \
@@ -264,12 +282,83 @@ grpcurl -plaintext \
   127.0.0.1:3000 order.Order/Create
 ```
 
-Comportamento esperado:
+Verificacao:
 
 - a chamada falha por `DeadlineExceeded`
 - o `order` registra no log que houve timeout ao chamar o `payment`
 
-Depois do teste, remova o `time.Sleep`.
+Remova o `time.Sleep` apos o teste.
+
+### Parte 5 - Testes de shipping, estoque e Docker
+
+#### 1. Produto inexistente
+
+Os produtos `a`, `b` e `c` sao cadastrados automaticamente no estoque.
+
+Teste com um produto fora dessa lista:
+
+```bash
+grpcurl -plaintext \
+  -d '{"costumer_id":1,"order_items":[{"product_code":"nao-existe","quantity":1,"unit_price":10}]}' \
+  127.0.0.1:3000 order.Order/Create
+```
+
+Retorno esperado:
+
+```txt
+ERROR:
+  Code: NotFound
+  Message: product nao-existe was not found in inventory
+```
+
+#### 2. Fluxo com shipping
+
+Com os tres servicos em execucao:
+
+```bash
+grpcurl -plaintext \
+  -d '{"costumer_id":1,"order_items":[{"product_code":"a","quantity":6,"unit_price":10}]}' \
+  127.0.0.1:3000 order.Order/Create
+```
+
+Verificacao:
+
+- o pedido e salvo
+- o pagamento e criado
+- o `shipping` e chamado
+- o prazo de entrega calculado para `6` unidades e `2` dias
+
+Regra do prazo:
+
+- de `1` a `5` unidades -> `1` dia
+- de `6` a `10` unidades -> `2` dias
+- de `11` a `15` unidades -> `3` dias
+
+Consulta no banco:
+
+```bash
+docker exec -it microsservices-mysql mysql -uroot -pminhasenha
+```
+
+```sql
+USE `shipping`;
+SELECT id, order_id, delivery_forecast_days FROM shippings;
+```
+
+#### 3. Subir tudo com Docker Compose
+
+```bash
+cd microservices
+docker compose up --build
+```
+
+Depois, execute os testes do `order` pela porta `3000`.
+
+Para encerrar:
+
+```bash
+docker compose down
+```
 
 ## Comandos uteis
 
@@ -286,5 +375,8 @@ cd microservices/order
 go build ./...
 
 cd ../payment
+go build ./...
+
+cd ../shipping
 go build ./...
 ```

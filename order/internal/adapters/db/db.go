@@ -6,6 +6,7 @@ import (
 	"github.com/pimentaluan/microservices/order/internal/application/core/domain"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Order struct {
@@ -23,6 +24,12 @@ type OrderItem struct {
 	OrderID     uint
 }
 
+type InventoryItem struct {
+	gorm.Model
+	ProductCode string `gorm:"uniqueIndex"`
+	Name        string
+}
+
 type Adapter struct {
 	db *gorm.DB
 }
@@ -34,10 +41,14 @@ func NewAdapter(dataSourceURL string) (*Adapter, error) {
 		return nil, fmt.Errorf("erro ao conectar no banco: %v", err)
 	}
 
-	err = database.AutoMigrate(&Order{}, &OrderItem{})
+	err = database.AutoMigrate(&Order{}, &OrderItem{}, &InventoryItem{})
 
 	if err != nil {
 		return nil, fmt.Errorf("erro ao executar migration: %v", err)
+	}
+
+	if err := seedInventory(database); err != nil {
+		return nil, fmt.Errorf("erro ao cadastrar itens iniciais do estoque: %v", err)
 	}
 
 	return &Adapter{
@@ -99,4 +110,25 @@ func (a Adapter) Save(order *domain.Order) error {
 
 func (a Adapter) UpdateStatus(id int64, status string) error {
 	return a.db.Model(&Order{}).Where("id = ?", id).Update("status", status).Error
+}
+
+func (a Adapter) ProductExists(productCode string) (bool, error) {
+	var count int64
+
+	result := a.db.Model(&InventoryItem{}).Where("product_code = ?", productCode).Count(&count)
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return count > 0, nil
+}
+
+func seedInventory(database *gorm.DB) error {
+	items := []InventoryItem{
+		{ProductCode: "a", Name: "Produto A"},
+		{ProductCode: "b", Name: "Produto B"},
+		{ProductCode: "c", Name: "Produto C"},
+	}
+
+	return database.Clauses(clause.OnConflict{DoNothing: true}).Create(&items).Error
 }

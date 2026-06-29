@@ -7,6 +7,7 @@ import (
 	"github.com/pimentaluan/microservices/order/internal/adapters/db"
 	grpcAdapter "github.com/pimentaluan/microservices/order/internal/adapters/grpc"
 	paymentAdapter "github.com/pimentaluan/microservices/order/internal/adapters/payment"
+	shippingAdapter "github.com/pimentaluan/microservices/order/internal/adapters/shipping"
 	"github.com/pimentaluan/microservices/order/internal/application/core/api"
 )
 
@@ -23,7 +24,13 @@ func main() {
 		log.Fatalf("erro ao iniciar cliente de pagamento: %v", err)
 	}
 
-	application := api.NewApplication(dbAdapter, paymentStub)
+	shippingStub, err := shippingAdapter.NewAdapter(config.GetShippingServiceURL())
+
+	if err != nil {
+		log.Fatalf("erro ao iniciar cliente de shipping: %v", err)
+	}
+
+	application := api.NewApplication(dbAdapter, paymentStub, shippingStub)
 
 	adapter := grpcAdapter.NewAdapter(
 		application,
